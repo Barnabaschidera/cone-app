@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cone Player</title>
+<style>
+:root{--chrome:#e8e6e1;--panel:#f6f5f2;--line:#c9c6bf;--ink:#26231f;--muted:#6d685f;--cone:#ee8200;--cone-d:#b96400;--stage:#0d0c0b}
+@media (prefers-color-scheme:dark){:root{--chrome:#2b2926;--panel:#35322e;--line:#4a4640;--ink:#efece6;--muted:#a49e93;--cone:#ff9a1f;--cone-d:#ffb85c}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:14px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--chrome);color:var(--ink);display:flex;flex-direction:column}
+button{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--cone)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--cone);outline-offset:1px}
+header{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}
+header h1{font-size:15px;margin:0;font-weight:600}
+.cone{width:22px;height:22px}
+header .sp{flex:1}
+#timer{color:var(--muted);font-size:12px}
+main{flex:1;display:flex;min-height:0}
+#stage{flex:1;background:var(--stage);position:relative;display:flex;align-items:center;justify-content:center;min-width:0}
+video{width:100%;height:100%;object-fit:contain;background:var(--stage)}
+#empty{position:absolute;color:#cfc9bd;text-align:center;pointer-events:none}
+#empty p{margin:4px 0}
+#empty b{color:var(--cone)}
+#stage.drag{outline:3px dashed var(--cone);outline-offset:-8px}
+aside{width:280px;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+aside h2{font-size:13px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line)}
+#list{list-style:none;margin:0;padding:0;overflow:auto;flex:1}
+#list li{padding:7px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px}
+#list li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#list li.on{background:color-mix(in srgb,var(--cone) 18%,transparent);font-weight:600}
+#list li.on::before{content:"\25B6";color:var(--cone);font-size:10px;line-height:20px}
+#none{padding:12px;color:var(--muted)}
+footer{padding:8px 12px 10px;border-top:1px solid var(--line);display:grid;gap:8px}
+.seek{display:flex;align-items:center;gap:10px}
+.seek time{font-variant-numeric:tabular-nums;min-width:52px;color:var(--muted);font-size:12px}
+#seek{flex:1}
+input[type=range]{accent-color:var(--cone);width:100%}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.row .sp{flex:1}
+#play{background:var(--cone);border-color:var(--cone-d);color:#1b1100;font-weight:600;min-width:74px}
+select{font:inherit;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px}
+button[aria-pressed=true]{background:color-mix(in srgb,var(--cone) 25%,var(--panel));border-color:var(--cone)}
+#vol{width:90px}
+/* Ad break */
+#ad{position:fixed;inset:0;background:rgba(10,9,8,.88);display:none;align-items:center;justify-content:center;z-index:10;padding:16px}
+#ad.show{display:flex}
+.adbox{background:var(--panel);border-radius:8px;width:min(560px,100%);padding:18px;border:1px solid var(--line)}
+.adbox h3{margin:0 0 4px;font-size:16px}
+.adbox p{margin:0 0 12px;color:var(--muted)}
+#ad-slot{min-height:220px;border:1px dashed var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;margin-bottom:12px}
+.adbox .row{justify-content:flex-end}
+@media (max-width:760px){
+  aside{position:fixed;right:0;top:0;bottom:0;width:min(300px,85vw);z-index:5;display:none;box-shadow:-6px 0 20px rgba(0,0,0,.35)}
+  body.pl aside{display:flex}
+  header{flex-wrap:wrap}#timer{display:none}
+  button,select{min-height:40px}
+  #vol{width:70px}
+}
+#plbtn{display:none}@media (max-width:760px){#plbtn{display:inline-block}}
+body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+@media (prefers-reduced-motion:no-preference){#ad.show .adbox{animation:pop .18s ease-out}@keyframes pop{from{transform:scale(.97);opacity:0}}}
+</style>
+</head>
+<body>
+<header>
+  <svg class="cone" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 6 20h12z" fill="#ee8200"/><path d="M9.2 11h5.6l1 3H8.2z" fill="#fff"/><rect x="4" y="19.5" width="16" height="2.5" rx="1" fill="#26231f"/></svg>
+  <h1>Cone Player</h1>
+  <button id="open">Open files</button>
+  <button id="openSub">Add subtitles</button>
+  <button id="plbtn">Playlist</button>
+  <span class="sp"></span>
+  <span id="timer" title="Ad break arrives after this much playback"></span>
+  <input id="file" type="file" accept="video/*,audio/*" multiple hidden>
+  <input id="subfile" type="file" accept=".vtt,.srt" hidden>
+</header>
+<main>
+  <div id="stage">
+    <video id="v" playsinline></video>
+    <div id="empty"><p><b>Open a video or audio file</b></p><p>Tap Open files to pick from your phone.</p></div>
+  </div>
+  <aside><h2>Playlist</h2><ul id="list"></ul><div id="none">No files yet.</div></aside>
+</main>
+<footer>
+  <div class="seek"><time id="cur">0:00</time><input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek"><time id="dur">0:00</time></div>
+  <div class="row">
+    <button id="prev" aria-label="Previous">Prev</button>
+    <button id="play">Play</button>
+    <button id="stop">Stop</button>
+    <button id="next" aria-label="Next">Next</button>
+    <button id="shuffle" aria-pressed="false">Shuffle</button>
+    <button id="loop" aria-pressed="false">Repeat</button>
+    <span class="sp"></span>
+    <label>Speed <select id="rate"><option>0.5</option><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option><option>2</option></select></label>
+    <button id="mute" aria-pressed="false">Mute</button>
+    <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume">
+    <button id="fs">Fullscreen</button>
+  </div>
+</footer>
+
+<div id="ad" role="dialog" aria-modal="true" aria-labelledby="ad-t">
+  <div class="adbox">
+    <h3 id="ad-t">Ad break</h3>
+    <p>Thanks for watching. Playback resumes after this message.</p>
+    <!-- Paste your ad network code inside #ad-slot. Leave the container in place. -->
+    <div id="ad-slot"><div><b>Your ad goes here</b><br>Replace this text with your ad network's code or your own banner.</div></div>
+    <div class="row"><button id="adskip" disabled>Continue in 5</button></div>
+  </div>
+</div>
+
+<script>
+// ---- Ad settings: edit these ----
+const AD = {
+  afterSeconds: 3600,   // ad break after this much actual playback (1 hour)
+  skipDelay: 5          // seconds before the Continue button works
+};
+// Test the ad quickly: open ConePlayer.html#adtest=10 to trigger it after 10 seconds.
+const m = location.hash.match(/adtest=(\d+)/); if (m) AD.afterSeconds = +m[1];
+
+const $ = id => document.getElementById(id), v = $('v');
+let items = [], idx = -1, played = 0, adOpen = false, shuffle = false, loop = false;
+const KEY = 'coneplayer.played';
+try { played = +localStorage.getItem(KEY) || 0; } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, played); } catch (e) {} };
+
+const fmt = s => { if (!isFinite(s)) return '0:00'; s = Math.floor(s); const h = Math.floor(s/3600), mi = Math.floor(s%3600/60), se = s%60;
+  return (h ? h + ':' + String(mi).padStart(2,'0') : mi) + ':' + String(se).padStart(2,'0'); };
+
+function renderList(){
+  $('list').innerHTML = ''; $('none').style.display = items.length ? 'none' : 'block';
+  items.forEach((it, i) => { const li = document.createElement('li'); if (i === idx) li.className = 'on';
+    const sp = document.createElement('span'); sp.textContent = it.name; li.appendChild(sp); li.onclick = () => { play(i); document.body.classList.remove('pl'); }; $('list').appendChild(li); });
+}
+function addFiles(files){
+  const ok = [...files].filter(f => /^(video|audio)\//.test(f.type) || /\.(mp4|m4v|webm|mkv|mov|ogv|mp3|m4a|aac|wav|ogg|opus|flac)$/i.test(f.name));
+  ok.forEach(f => items.push({ name: f.name, url: URL.createObjectURL(f) }));
+  renderList(); if (ok.length && idx < 0) play(0);
+}
+function play(i){
+  if (!items[i]) return; idx = i; v.src = items[i].url; v.querySelectorAll('track').forEach(t => t.remove());
+  $('empty').style.display = 'none'; renderList(); v.play().catch(() => {});
+}
+function step(d){
+  if (!items.length) return;
+  if (shuffle && items.length > 1) { let n; do { n = Math.floor(Math.random()*items.length); } while (n === idx); return play(n); }
+  const n = idx + d; if (n >= 0 && n < items.length) play(n); else if (loop) play((n + items.length) % items.length);
+}
+// Subtitles (.vtt or .srt)
+function srtToVtt(t){ return 'WEBVTT\n\n' + t.replace(/\r/g,'').replace(/(\d+:\d+:\d+),(\d+)/g,'$1.$2'); }
+$('subfile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return; let t = await f.text(); if (/\.srt$/i.test(f.name)) t = srtToVtt(t);
+  v.querySelectorAll('track').forEach(x => x.remove());
+  const tr = document.createElement('track'); tr.kind = 'subtitles'; tr.label = f.name; tr.default = true;
+  tr.src = URL.createObjectURL(new Blob([t], { type: 'text/vtt' })); v.appendChild(tr); tr.track.mode = 'showing'; e.target.value = '';
+};
+
+// Controls
+$('open').onclick = () => $('file').click();
+$('plbtn').onclick = () => document.body.classList.toggle('pl');
+$('openSub').onclick = () => $('subfile').click();
+$('file').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+const toggle = () => { if (adOpen) return; if (!v.src) return $('file').click(); v.paused ? v.play() : v.pause(); };
+$('play').onclick = toggle;
+$('stop').onclick = () => { v.pause(); v.currentTime = 0; };
+$('prev').onclick = () => (v.currentTime > 3 ? v.currentTime = 0 : step(-1));
+$('next').onclick = () => step(1);
+$('shuffle').onclick = e => { shuffle = !shuffle; e.target.setAttribute('aria-pressed', shuffle); };
+$('loop').onclick = e => { loop = !loop; e.target.setAttribute('aria-pressed', loop); };
+$('rate').onchange = e => v.playbackRate = +e.target.value;
+$('vol').oninput = e => { v.volume = e.target.value/100; v.muted = false; $('mute').setAttribute('aria-pressed', false); };
+$('mute').onclick = e => { v.muted = !v.muted; e.target.setAttribute('aria-pressed', v.muted); };
+$('fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : $('stage').requestFullscreen();
+v.onclick = toggle; v.ondblclick = () => $('fs').click();
+v.volume = .8;
+v.onplay = () => $('play').textContent = 'Pause';
+v.onpause = () => $('play').textContent = 'Play';
+v.onended = () => step(1);
+v.ontimeupdate = () => { $('cur').textContent = fmt(v.currentTime); if (v.duration) $('seek').value = v.currentTime/v.duration*1000; };
+v.onloadedmetadata = () => $('dur').textContent = fmt(v.duration);
+v.onerror = () => { $('empty').style.display = 'block'; $('empty').innerHTML = '<p><b>This file can\'t be played here</b></p><p>Windows browsers play MP4 (H.264), WebM, MP3, AAC, WAV and OGG. Try another file.</p>'; };
+$('seek').oninput = e => { if (v.duration) v.currentTime = e.target.value/1000*v.duration; };
+
+// Drag and drop
+const st = $('stage');
+['dragenter','dragover'].forEach(n => st.addEventListener(n, e => { e.preventDefault(); st.classList.add('drag'); }));
+['dragleave','drop'].forEach(n => st.addEventListener(n, e => { e.preventDefault(); st.classList.remove('drag'); }));
+st.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+
+// Keyboard
+addEventListener('keydown', e => {
+  if (adOpen || /INPUT|SELECT/.test(e.target.tagName) && e.key !== 'Escape') return;
+  const k = e.key;
+  if (k === ' ') { e.preventDefault(); toggle(); }
+  else if (k === 'ArrowRight') v.currentTime += 10; else if (k === 'ArrowLeft') v.currentTime -= 10;
+  else if (k === 'ArrowUp') { v.volume = Math.min(1, v.volume + .05); $('vol').value = v.volume*100; }
+  else if (k === 'ArrowDown') { v.volume = Math.max(0, v.volume - .05); $('vol').value = v.volume*100; }
+  else if (k === 'f' || k === 'F') $('fs').click(); else if (k === 'm' || k === 'M') $('mute').click();
+  else if (k === 'n' || k === 'N') step(1); else if (k === 'p' || k === 'P') step(-1);
+});
+
+// Ad break: counts real playback time only (not paused time)
+function left(){ const s = Math.max(0, AD.afterSeconds - played); return s >= 60 ? Math.ceil(s/60) + ' min of playback until the next ad break' : Math.ceil(s) + ' s until the next ad break'; }
+function showAd(){
+  adOpen = true; v.pause(); $('ad').classList.add('show'); let c = AD.skipDelay; const b = $('adskip');
+  b.disabled = true; b.textContent = 'Continue in ' + c;
+  const t = setInterval(() => { c--; if (c > 0) b.textContent = 'Continue in ' + c; else { clearInterval(t); b.disabled = false; b.textContent = 'Continue'; b.focus(); } }, 1000);
+}
+$('adskip').onclick = () => { $('ad').classList.remove('show'); adOpen = false; played = 0; save(); v.play().catch(() => {}); };
+setInterval(() => {
+  if (!v.paused && !v.ended && !adOpen && v.readyState > 2) { played += 1; if (played % 5 === 0) save(); if (played >= AD.afterSeconds) showAd(); }
+  $('timer').textContent = left();
+}, 1000);
+$('timer').textContent = left();
+</script>
+</body>
+</html>
